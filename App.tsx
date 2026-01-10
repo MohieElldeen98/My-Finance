@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { LayoutDashboard, List, PieChart as PieChartIcon, MessageSquareText, Target, CalendarClock, Sparkles, PenTool, FileBarChart, Trash2, LogOut } from 'lucide-react';
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
 import { collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, where, orderBy } from 'firebase/firestore';
-import { auth, db } from './firebase';
+import { auth, db } from './services/firebase';
 
 import Dashboard from './components/Dashboard';
 import SmartEntry from './components/SmartEntry';
