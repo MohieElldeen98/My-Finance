@@ -1,0 +1,7 @@
+{
+  "name": "مساعدي المالي (My Finance)",
+  "description": "A smart personal finance manager that uses AI to track expenses, analyze spending habits, and provide financial advice via voice or text inputs.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
