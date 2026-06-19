@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Mic, Send, Loader2, Sparkles, Calendar, WifiOff } from 'lucide-react';
 import { parseTransactionFromText } from '../services/geminiService';
 import { ParsedTransaction } from '../types';
+import { useGlobalSettings } from '../context/GlobalSettings';
 
 interface SmartEntryProps {
   onTransactionParsed: (data: ParsedTransaction, date: string) => void;
@@ -22,6 +23,8 @@ const SmartEntry: React.FC<SmartEntryProps> = ({ onTransactionParsed }) => {
   const [recognition, setRecognition] = useState<any>(null);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  
+  const globalSettings = useGlobalSettings();
 
   useEffect(() => {
     // Monitor online status for Voice feature availability
@@ -86,7 +89,8 @@ const SmartEntry: React.FC<SmartEntryProps> = ({ onTransactionParsed }) => {
 
     setIsProcessing(true);
     try {
-      const result = await parseTransactionFromText(input);
+      const customCatsStr = (globalSettings.customCategories || []).map(c => c.id).join(', ');
+      const result = await parseTransactionFromText(input, customCatsStr);
       if (result) {
         onTransactionParsed(result, selectedDate);
         setInput('');

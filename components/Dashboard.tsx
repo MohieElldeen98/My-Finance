@@ -2,8 +2,9 @@
 import React, { useMemo, useState } from 'react';
 import { Transaction, RecurringTransaction, FinancialGoal } from '../types';
 import { ArrowUpCircle, ArrowDownCircle, Wallet, TrendingUp, CalendarClock, AlertCircle, Calculator, Target, BarChart3, TrendingDown, Minus, Plus, MessageSquareText, Sparkles, X, CheckCircle2 } from 'lucide-react';
-import { CATEGORY_LABELS, CURRENCY, TYPE_LABELS } from '../constants';
+import { CURRENCY, TYPE_LABELS } from '../constants';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
+import { useCategoryInfo } from '../context/GlobalSettings';
 
 interface DashboardProps {
   transactions: Transaction[];
@@ -15,6 +16,7 @@ interface DashboardProps {
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1'];
 
 const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringItems = [], goals = [], setActiveTab }) => {
+  const getCategoryInfo = useCategoryInfo();
   
   // State for Modal
   const [activeModal, setActiveModal] = useState<'balance' | 'income' | 'expense' | 'commitments' | null>(null);
@@ -105,7 +107,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringItems = []
       grouped[t.category] = (grouped[t.category] || 0) + t.amount;
     });
     return Object.entries(grouped).map(([key, value]) => ({
-      name: CATEGORY_LABELS[key] || key,
+      name: getCategoryInfo(key).label,
       value
     })).sort((a, b) => b.value - a.value);
   }, [transactions]);
@@ -263,11 +265,11 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringItems = []
                                           <p className="font-bold text-gray-800 text-sm">
                                               {activeModal === 'commitments' 
                                                   ? item.title 
-                                                  : (item.category ? CATEGORY_LABELS[item.category] : 'عام')}
+                                                  : (item.category ? getCategoryInfo(item.category).label : 'عام')}
                                           </p>
                                           <p className="text-xs text-gray-400">
                                               {activeModal === 'commitments' 
-                                                ? `${item.category ? CATEGORY_LABELS[item.category] : ''} • استحقاق: ${new Date(item.nextDueDate).toLocaleDateString('ar-EG')}` 
+                                                ? `${item.category ? getCategoryInfo(item.category).label : ''} • استحقاق: ${new Date(item.nextDueDate).toLocaleDateString('ar-EG')}` 
                                                 : `${new Date(item.date).toLocaleDateString('ar-EG')} • ${item.note || '-'}`}
                                           </p>
                                       </div>
@@ -499,7 +501,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringItems = []
                        {t.type === 'income' ? <ArrowUpCircle size={18} /> : <ArrowDownCircle size={18} />}
                     </div>
                     <div>
-                      <p className="font-bold text-gray-800 text-sm">{CATEGORY_LABELS[t.category]}</p>
+                      <p className="font-bold text-gray-800 text-sm">{getCategoryInfo(t.category).label}</p>
                       <p className="text-[10px] text-gray-400">{new Date(t.date).toLocaleDateString('ar-EG')}</p>
                     </div>
                   </div>

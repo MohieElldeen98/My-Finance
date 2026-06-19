@@ -16,6 +16,7 @@ interface InstallmentsManagerProps {
 const InstallmentsManager: React.FC<InstallmentsManagerProps> = ({ items, onAdd, onUpdate, onDelete, onProcess, onAddTransaction }) => {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showArchive, setShowArchive] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState<Partial<RecurringTransaction>>({
@@ -263,6 +264,9 @@ const InstallmentsManager: React.FC<InstallmentsManagerProps> = ({ items, onAdd,
       return 'bg-orange-500';
   };
 
+  const activeItems = items.filter(item => !((item.totalPaidCount || 0) >= (item.installmentsCount || 1)));
+  const finishedItems = items.filter(item => (item.totalPaidCount || 0) >= (item.installmentsCount || 1));
+
   return (
     <div className="space-y-6 animate-fade-in pb-20">
       
@@ -290,7 +294,7 @@ const InstallmentsManager: React.FC<InstallmentsManagerProps> = ({ items, onAdd,
                <div className="absolute top-0 right-0 w-1 h-full bg-indigo-500"></div>
                <p className="text-gray-500 text-xs font-bold mb-1">إجمالي المديونية</p>
                <h3 className="text-2xl font-bold text-gray-800">{stats.totalDebt.toLocaleString()} <span className="text-xs font-normal text-gray-400">{CURRENCY}</span></h3>
-               <p className="text-xs text-indigo-600 mt-2 flex items-center gap-1"><AlertCircle size={12}/> {stats.activeCount} أقساط نشطة</p>
+               <p className="text-xs text-indigo-600 mt-2 flex items-center gap-1"><AlertCircle size={12}/> {activeItems.length} أقساط نشطة</p>
           </div>
 
           <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm relative overflow-hidden">
@@ -427,14 +431,14 @@ const InstallmentsManager: React.FC<InstallmentsManagerProps> = ({ items, onAdd,
       )}
 
       {/* Installments List - RESPONSIVE STACK */}
-      <div className="space-y-4">
-        {items.length === 0 ? (
+      <div className="space-y-6">
+        {activeItems.length === 0 ? (
             <div className="py-12 flex flex-col items-center justify-center text-gray-400 border-2 border-dashed border-gray-200 rounded-2xl">
                 <Layers size={40} className="mb-2 opacity-20" />
-                <p>لا توجد أقساط حالية. أضف قسط جديد لتنظيم ديونك.</p>
+                <p>لا توجد أقساط نشطة حالياً. أضف قسط جديد لتنظيم ديونك.</p>
             </div>
         ) : (
-            items.map(item => {
+            activeItems.map(item => {
                 const totalDebt = (item.totalValue || (item.amount * (item.installmentsCount || 1))) + (item.maintenance || 0);
                 const paidAmount = (item.amount * (item.totalPaidCount || 0)) + (item.downPayment || 0);
                 const remaining = Math.max(0, totalDebt - paidAmount);
@@ -532,6 +536,48 @@ const InstallmentsManager: React.FC<InstallmentsManagerProps> = ({ items, onAdd,
         )}
       </div>
 
+      {finishedItems.length > 0 && (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+              <div className="flex items-center justify-between mb-4 gap-3">
+                  <div>
+                      <h3 className="text-lg font-bold text-gray-800">أرشيف الأقساط المكتملة</h3>
+                      <p className="text-sm text-gray-500">الأقساط التي تم سدادها بالكامل لا تظهر في القائمة الرئيسية.</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                      <span className="text-sm text-green-600 font-bold">{finishedItems.length} مكتمل</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowArchive(prev => !prev)}
+                        className="text-xs font-bold px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 transition-colors"
+                      >
+                        {showArchive ? 'إخفاء الأرشيف' : 'عرض الأرشيف'}
+                      </button>
+                  </div>
+              </div>
+
+              {showArchive ? (
+                <div className="grid gap-3">
+                    {finishedItems.map(item => (
+                        <div key={item.id} className="bg-green-50 rounded-2xl border border-green-100 p-4 flex flex-col md:flex-row justify-between gap-3">
+                            <div>
+                                <p className="font-bold text-gray-800">{item.title}</p>
+                                <p className="text-xs text-gray-500 mt-1">انتهى ({calculateEndDate(item.startDate || item.nextDueDate, item.installmentsCount || 1, item.frequency)})</p>
+                                <p className="text-xs text-gray-500 mt-1">تم الدفع بالكامل: {((item.amount * (item.totalPaidCount || 0)) + (item.downPayment || 0)).toLocaleString()} {CURRENCY}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button onClick={() => handleEdit(item)} className="px-4 py-2 rounded-xl bg-white text-blue-600 border border-blue-100 hover:bg-blue-50 transition-colors">تعديل</button>
+                                <button onClick={() => onDelete(item.id)} className="px-4 py-2 rounded-xl bg-white text-red-600 border border-red-100 hover:bg-red-50 transition-colors">حذف</button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+              ) : (
+                <div className="text-xs text-gray-400 p-4 bg-gray-50 rounded-xl border border-gray-100">
+                    اضغط على الزر لعرض الأقساط المكتملة إذا احتجت تراجع أو تحذف أي منها.
+                </div>
+              )}
+          </div>
+      )}
     </div>
   );
 };

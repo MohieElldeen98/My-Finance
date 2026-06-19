@@ -1,11 +1,12 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Transaction } from '../types';
-import { CATEGORY_LABELS, CURRENCY } from '../constants';
+import { CURRENCY } from '../constants';
 import { 
   BarChart3, 
   ChevronLeft, 
   ChevronRight, 
+  ChevronDown,
   TrendingUp, 
   TrendingDown, 
   PieChart as PieIcon, 
@@ -24,23 +25,26 @@ import {
   CartesianGrid, 
   Tooltip as RechartsTooltip, 
   ResponsiveContainer, 
-  AreaChart, 
-  Area,
   BarChart,
   Bar,
   Legend
 } from 'recharts';
+import { useCategoryInfo } from '../context/GlobalSettings';
 
 interface ReportsProps {
   transactions: Transaction[];
 }
 
 const Reports: React.FC<ReportsProps> = ({ transactions }) => {
+  const getCategoryInfo = useCategoryInfo();
   // State for selected month/year
   const [currentDate, setCurrentDate] = useState(new Date());
   // State for selected specific day in the daily report section
   const [selectedDay, setSelectedDay] = useState<number>(new Date().getDate());
   const daysScrollRef = useRef<HTMLDivElement>(null);
+
+  // State for expanded category
+  const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
 
   const handlePrevMonth = () => {
     setCurrentDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
@@ -87,13 +91,17 @@ const Reports: React.FC<ReportsProps> = ({ transactions }) => {
     const prevStats = calcTotals(prevMonthTx);
 
     // 3. Category Breakdown (Current Month)
-    const categoryMap: Record<string, number> = {};
+    const categoryMap: Record<string, { amount: number, txs: Transaction[], key: string }> = {};
     currentMonthTx.filter(t => t.type === 'expense').forEach(t => {
-      categoryMap[t.category] = (categoryMap[t.category] || 0) + t.amount;
+      if (!categoryMap[t.category]) {
+        categoryMap[t.category] = { amount: 0, txs: [], key: t.category };
+      }
+      categoryMap[t.category].amount += t.amount;
+      categoryMap[t.category].txs.push(t);
     });
     
     const topCategories = Object.entries(categoryMap)
-      .map(([cat, amount]) => ({ name: CATEGORY_LABELS[cat] || cat, amount }))
+      .map(([cat, data]) => ({ name: getCategoryInfo(cat).label, amount: data.amount, txs: data.txs.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()), key: cat }))
       .sort((a, b) => b.amount - a.amount);
 
     const highestCategory = topCategories.length > 0 ? topCategories[0] : null;
@@ -191,23 +199,18 @@ const Reports: React.FC<ReportsProps> = ({ transactions }) => {
 
   // Scroll to selected day on initial load or change
   useEffect(() => {
-    if (daysScrollRef.current) {
-        // Simple logic to center the selected day roughly
-        const buttonWidth = 50; // approx width of day button
-        const scrollPos = (selectedDay - 1) * buttonWidth - (daysScrollRef.current.clientWidth / 2) + (buttonWidth / 2);
-        daysScrollRef.current.scrollTo({ left: scrollPos, behavior: 'smooth' });
-    }
-  }, [selectedDay]);
-
-  // Handle Chart Click
-  const handleChartClick = (data: any) => {
-    if (data && data.activeLabel) {
-        setSelectedDay(parseInt(data.activeLabel));
-        // Scroll to the daily section
-        const element = document.getElementById('daily-report-section');
-        if (element) element.scrollIntoView({ behavior: 'smooth' });
-    }
-  };
+    const timer = setTimeout(() => {
+      if (daysScrollRef.current) {
+          const container = daysScrollRef.current;
+          const button = container.children[selectedDay - 1] as HTMLElement;
+          if (button) {
+              const scrollLeft = button.offsetLeft - (container.clientWidth / 2) + (button.clientWidth / 2);
+              container.scrollTo({ left: scrollLeft, behavior: 'smooth' });
+          }
+      }
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [selectedDay, reportData.daysInMonth]);
 
   return (
     <div className="space-y-6 animate-fade-in pb-10">
@@ -311,7 +314,7 @@ const Reports: React.FC<ReportsProps> = ({ transactions }) => {
                                   {t.type === 'income' ? <ArrowUpCircle size={18} /> : <ArrowDownCircle size={18} />}
                               </div>
                               <div>
-                                  <p className="font-bold text-gray-700 text-sm">{CATEGORY_LABELS[t.category]}</p>
+                                  <p className="font-bold text-gray-700 text-sm">{getCategoryInfo(t.category).label}</p>
                                   <div className="flex items-center gap-2 text-xs text-gray-400">
                                       <span className="flex items-center gap-1">
                                           <Clock size={10} />
@@ -408,48 +411,9 @@ const Reports: React.FC<ReportsProps> = ({ transactions }) => {
           </div>
        </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Daily Spending Trend (Area Chart) */}
-        <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 h-80 flex flex-col">
-          <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-            <TrendingUp size={18} className="text-blue-500"/>
-            حركة السيولة اليومية
-            <span className="text-xs font-normal text-gray-400 mr-2">(للشهر المحدد)</span>
-          </h3>
-          <div className="flex-1 w-full min-h-0 text-xs" dir="ltr">
-             <ResponsiveContainer width="100%" height="100%">
-                <AreaChart 
-                    data={reportData.dailyData} 
-                    margin={{ top: 10, right: 0, left: -20, bottom: 0 }}
-                    onClick={handleChartClick}
-                >
-                  <defs>
-                    <linearGradient id="colorExpense" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#ef4444" stopOpacity={0.1}/>
-                      <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
-                  <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{fill: '#94a3b8'}} />
-                  <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8'}} />
-                  <RechartsTooltip 
-                    contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 10px rgba(0,0,0,0.05)'}}
-                    labelStyle={{color: '#64748b'}}
-                  />
-                  <Area type="monotone" dataKey="income" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorIncome)" name="دخل" />
-                  <Area type="monotone" dataKey="expense" stroke="#ef4444" strokeWidth={2} fillOpacity={1} fill="url(#colorExpense)" name="مصروف" />
-                </AreaChart>
-             </ResponsiveContainer>
-          </div>
-        </div>
-
+      <div className="grid grid-cols-1 gap-6">
         {/* Top Expense Category */}
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col">
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col w-full mx-auto">
             <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
                 <PieIcon size={18} className="text-purple-500"/>
                 أين ذهبت أموالك؟
@@ -467,16 +431,43 @@ const Reports: React.FC<ReportsProps> = ({ transactions }) => {
                  </div>
             )}
 
-            <div className="flex-1 overflow-y-auto pr-1 space-y-3 custom-scrollbar h-40 lg:h-auto">
+            <div className="flex-1 overflow-y-auto pr-1 space-y-3 custom-scrollbar max-h-96">
                 {reportData.topCategories.map((cat, idx) => (
-                    <div key={cat.name} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg transition-colors">
-                        <div className="flex items-center gap-3">
-                            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${idx === 0 ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500'}`}>
-                                {idx + 1}
+                    <div key={cat.key} className="flex flex-col p-2 hover:bg-gray-50 rounded-lg transition-colors border border-transparent hover:border-gray-100">
+                        <div 
+                           className="flex items-center justify-between cursor-pointer"
+                           onClick={() => setExpandedCategory(expandedCategory === cat.key ? null : cat.key)}
+                        >
+                            <div className="flex items-center gap-3">
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${idx === 0 ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500'}`}>
+                                    {idx + 1}
+                                </div>
+                                <span className="text-sm font-bold text-gray-700">{cat.name}</span>
                             </div>
-                            <span className="text-sm font-medium text-gray-700">{cat.name}</span>
+                            <div className="flex items-center gap-2">
+                                <span className="text-sm font-bold text-gray-800">{cat.amount.toLocaleString()}</span>
+                                <div className={`transform transition-transform ${expandedCategory === cat.key ? 'rotate-180' : 'rotate-0'}`}>
+                                    <ChevronDown size={16} className="text-gray-400" />
+                                </div>
+                            </div>
                         </div>
-                        <span className="text-sm font-bold text-gray-600">{cat.amount.toLocaleString()}</span>
+
+                        {expandedCategory === cat.key && (
+                            <div className="mt-3 pt-3 border-t border-gray-100 space-y-2 pl-2">
+                                {cat.txs.map((t) => (
+                                    <div key={t.id} className="flex justify-between items-center text-sm bg-white p-2 rounded-lg border border-gray-50 shadow-sm">
+                                        <div className="flex flex-col">
+                                            <span className="text-gray-700 font-medium whitespace-nowrap overflow-hidden text-ellipsis max-w-[150px] sm:max-w-[200px]">{t.note || 'بدون وصف'}</span>
+                                            <span className="text-[10px] text-gray-500 flex items-center gap-1">
+                                                <CalendarCheck size={10} />
+                                                {new Date(t.date).toLocaleDateString('ar-EG')}
+                                            </span>
+                                        </div>
+                                        <span className="text-red-500 text-xs font-bold whitespace-nowrap">{t.amount.toLocaleString()} {CURRENCY}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 ))}
             </div>

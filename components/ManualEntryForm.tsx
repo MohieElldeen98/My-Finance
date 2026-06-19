@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { ArrowDownCircle, ArrowUpCircle, Save, Calendar, FileText, CreditCard, X } from 'lucide-react';
 import { CATEGORY_LABELS, PAYMENT_METHODS, FEMALE_ONLY_CATEGORIES } from '../constants';
 import { ParsedTransaction, TransactionType, Transaction, UserProfile } from '../types';
+import { useGlobalSettings } from '../context/GlobalSettings';
 
 interface ManualEntryFormProps {
   onSubmit: (data: ParsedTransaction, date: string) => void;
@@ -12,6 +13,8 @@ interface ManualEntryFormProps {
 }
 
 const ManualEntryForm: React.FC<ManualEntryFormProps> = ({ onSubmit, initialData, onCancel, userProfile }) => {
+  const globalSettings = useGlobalSettings();
+
   const [type, setType] = useState<TransactionType>('expense');
   const [amount, setAmount] = useState<string>('');
   const [category, setCategory] = useState<string>('food');
@@ -39,15 +42,33 @@ const ManualEntryForm: React.FC<ManualEntryFormProps> = ({ onSubmit, initialData
     }
   }, [initialData]);
 
-  // Filter Categories based on Gender
+  // Filter Categories based on Gender + Custom Globals
   const filteredCategories = useMemo(() => {
-    return Object.entries(CATEGORY_LABELS).filter(([key]) => {
+    const allLabels = { ...CATEGORY_LABELS };
+    
+    // Add globals
+    globalSettings.customCategories?.forEach(c => {
+        if (c.type === 'both' || c.type === type) {
+            allLabels[c.id] = c.label;
+        }
+    });
+
+    return Object.entries(allLabels).filter(([key]) => {
       if (userProfile?.gender !== 'female' && FEMALE_ONLY_CATEGORIES.includes(key)) {
         return false; // Hide makeup for males
       }
       return true;
     });
-  }, [userProfile]);
+  }, [userProfile, globalSettings.customCategories, type]);
+
+  // Keep selected category valid when dynamic categories update or type changes.
+  useEffect(() => {
+    if (initialData) return;
+    if (filteredCategories.length === 0) return;
+    if (!filteredCategories.some(([key]) => key === category)) {
+      setCategory(filteredCategories[0][0]);
+    }
+  }, [filteredCategories, category, initialData]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

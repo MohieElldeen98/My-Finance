@@ -1,8 +1,9 @@
 
 import React from 'react';
 import { Transaction } from '../types';
-import { CATEGORY_LABELS, CATEGORY_COLORS, CURRENCY } from '../constants';
+import { CURRENCY } from '../constants';
 import { Trash2, CreditCard, Banknote, Smartphone, Pencil, Clock, ArrowUpCircle, ArrowDownCircle } from 'lucide-react';
+import { useCategoryInfo } from '../context/GlobalSettings';
 
 interface TransactionListProps {
   transactions: Transaction[];
@@ -11,6 +12,8 @@ interface TransactionListProps {
 }
 
 const TransactionList: React.FC<TransactionListProps> = ({ transactions, onDelete, onEdit }) => {
+  const getCategoryInfo = useCategoryInfo();
+
   const getPaymentIcon = (method: string) => {
     switch (method) {
       case 'card': return <CreditCard size={14} />;
@@ -48,8 +51,8 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, onDelet
                           </div>
                           <div>
                               <div className="flex items-center gap-2">
-                                  <h4 className="font-bold text-gray-800 text-sm">{CATEGORY_LABELS[t.category]}</h4>
-                                  <span className={`text-[10px] px-1.5 py-0.5 rounded-md ${CATEGORY_COLORS[t.category] || 'bg-gray-100 text-gray-600'}`}>
+                                  <h4 className="font-bold text-gray-800 text-sm">{getCategoryInfo(t.category).label}</h4>
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded-md ${getCategoryInfo(t.category).color}`}>
                                       {t.category === 'installments' ? 'قسط' : 'عام'}
                                   </span>
                               </div>
@@ -120,8 +123,8 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, onDelet
                             </div>
                         </td>
                         <td className="px-6 py-4">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${CATEGORY_COLORS[t.category] || 'bg-gray-100 text-gray-800'}`}>
-                            {CATEGORY_LABELS[t.category]}
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${getCategoryInfo(t.category).color}`}>
+                            {getCategoryInfo(t.category).label}
                         </span>
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-500 max-w-[200px] truncate">

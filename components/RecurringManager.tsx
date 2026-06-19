@@ -1,8 +1,9 @@
 
 import React, { useState, useMemo } from 'react';
 import { RecurringTransaction, Transaction } from '../types';
-import { CURRENCY, FREQUENCY_LABELS, CATEGORY_LABELS } from '../constants';
+import { CURRENCY, FREQUENCY_LABELS } from '../constants';
 import { CalendarClock, Plus, Trash2, Pencil, Save, X, Timer, Filter, CheckSquare, ChevronLeft, ChevronRight, Bookmark } from 'lucide-react';
+import { useCategoryInfo } from '../context/GlobalSettings';
 
 interface RecurringManagerProps {
   items: RecurringTransaction[];
@@ -28,6 +29,7 @@ interface DisplayItem {
 }
 
 const RecurringManager: React.FC<RecurringManagerProps> = ({ items, transactions, onAdd, onUpdate, onDelete, onProcess }) => {
+  const getCategoryInfo = useCategoryInfo();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   
@@ -377,7 +379,7 @@ const RecurringManager: React.FC<RecurringManagerProps> = ({ items, transactions
                         <div className="flex-1">
                             <h3 className={`font-bold text-lg leading-tight ${isPaid ? 'text-gray-500 line-through' : 'text-gray-800'}`}>{item.title}</h3>
                             <div className="flex gap-2 text-sm text-gray-500 mt-1 flex-wrap">
-                                <span className="bg-white border border-gray-100 px-2 py-0.5 rounded text-xs">{CATEGORY_LABELS[item.category] || 'عام'}</span>
+                                <span className="bg-white border border-gray-100 px-2 py-0.5 rounded text-xs">{getCategoryInfo(item.category).label}</span>
                                 <span className="bg-white border border-gray-100 px-2 py-0.5 rounded text-xs">{FREQUENCY_LABELS[item.frequency] || 'شهري'}</span>
                             </div>
                             

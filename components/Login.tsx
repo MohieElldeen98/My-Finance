@@ -51,7 +51,7 @@ const Login: React.FC = () => {
     let emailToUse = email.trim();
     
     // Admin Shortcut
-    if (emailToUse.toLowerCase() === 'admin') emailToUse = 'mohieelldeena@gmail.com';
+    if (emailToUse.toLowerCase() === 'admin') emailToUse = 'mohieelldeenahmed@gmail.com';
 
     if (!emailToUse.includes('@')) {
          setError('يرجى إدخال بريد إلكتروني صحيح');
@@ -63,11 +63,7 @@ const Login: React.FC = () => {
       if (viewState === 'forgot') {
         // --- FORGOT PASSWORD LOGIC ---
         // Note: If email doesn't exist, Firebase might still simulate success for security (Email Enumeration Protection)
-        const actionCodeSettings = {
-            url: window.location.href, // This helps user return to app after reset
-            handleCodeInApp: false
-        };
-        await sendPasswordResetEmail(auth, emailToUse, actionCodeSettings);
+        await sendPasswordResetEmail(auth, emailToUse);
         
         setSuccessMsg('تم إرسال الرابط! تفقد البريد الوارد والرسائل المزعجة (Spam).');
         setResendTimer(60); // Start 60s cooldown

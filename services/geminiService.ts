@@ -20,10 +20,10 @@ const getAIClient = () => {
 /**
  * Parses natural language input into a structured transaction object using Gemini API.
  */
-export const parseTransactionFromText = async (text: string): Promise<ParsedTransaction | null> => {
+export const parseTransactionFromText = async (text: string, customCategoriesString: string = ''): Promise<ParsedTransaction | null> => {
   try {
     const ai = getAIClient();
-    const categories = Object.keys(CATEGORY_LABELS).join(', ');
+    const categories = Object.keys(CATEGORY_LABELS).join(', ') + (customCategoriesString ? ', ' + customCategoriesString : '');
     
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',

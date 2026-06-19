@@ -20,19 +20,19 @@ import AdminDashboard from './components/AdminDashboard';
 import Profile from './components/Profile'; 
 import { Transaction, ParsedTransaction, FinancialGoal, RecurringTransaction, UserProfile } from './types';
 import { CURRENCY } from './constants';
+import { useGlobalSettings } from './context/GlobalSettings';
 
 function App() {
+  const { enableAIEntry, hiddenTabs, tabOrder, customTabNames, settings } = useGlobalSettings();
+
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | undefined>(undefined); 
   const [loadingAuth, setLoadingAuth] = useState(true);
-
+  const isAIEnabled = settings?.isAIEnabled ?? true; // إذا لم يجدها سيجعلها مفعلة تلقائياً كاحتياط
   const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'reports' | 'advisor' | 'goals' | 'recurring' | 'installments' | 'savings' | 'profile'>('dashboard');
   
   // Entry Mode can be null (hidden), 'smart' or 'manual'
   const [entryMode, setEntryMode] = useState<'smart' | 'manual' | null>(null);
-  
-  // Global Settings State
-  const [isAIEnabled, setIsAIEnabled] = useState(true);
   
   // Sidebar State
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -85,26 +85,12 @@ function App() {
     }
 
     // SKIP SYNC IF ADMIN
-    const isAdmin = user.email?.toLowerCase() === 'mohieelldeena@gmail.com';
+    const isAdmin = user.email?.toLowerCase() === 'mohieelldeenahmed@gmail.com';
     if (isAdmin) {
       return; 
     }
 
     setIsDataLoading(true);
-
-    // Sync Global Settings
-    const unsubSettings = onSnapshot(doc(db, 'settings', 'global'), (doc) => {
-        if (doc.exists()) {
-             const data = doc.data();
-             if (data.enableAIEntry !== undefined) {
-                 setIsAIEnabled(data.enableAIEntry);
-                 // If disabled and currently in smart mode, switch to manual or null
-                 if (!data.enableAIEntry && entryMode === 'smart') {
-                     setEntryMode(null);
-                 }
-             }
-        }
-    });
 
     // Sync Transactions
     const qTransactions = query(collection(db, 'transactions'), where('userId', '==', user.uid)); 
@@ -134,9 +120,15 @@ function App() {
         unsubTrans();
         unsubGoals();
         unsubRecurring();
-        unsubSettings();
     };
   }, [user]);
+
+  // Global side effects
+  useEffect(() => {
+    if (!enableAIEntry && entryMode === 'smart') {
+      setEntryMode(null);
+    }
+  }, [enableAIEntry, entryMode]);
 
   // Separate Recurring items into: Subscriptions (Bills) vs Installments (Debt)
   const { subscriptions, installments } = useMemo(() => {
@@ -156,7 +148,7 @@ function App() {
   // Notification System Logic
   useEffect(() => {
     if (!user) return;
-    const isAdmin = user.email?.toLowerCase() === 'mohieelldeena@gmail.com';
+    const isAdmin = user.email?.toLowerCase() === 'mohieelldeenahmed@gmail.com';
     if (isAdmin) return; 
 
     const checkUpcomingDueDates = async () => {
@@ -401,7 +393,7 @@ function App() {
     return <Login />;
   }
 
-  if (user.email?.toLowerCase() === 'mohieelldeena@gmail.com') {
+  if (user.email?.toLowerCase() === 'mohieelldeenahmed@gmail.com') {
     return <AdminDashboard user={user} />;
   }
 
@@ -455,7 +447,7 @@ function App() {
           <nav className="flex-1 space-y-2 w-full">
             {[
               { id: 'dashboard', label: 'الرئيسية', icon: LayoutDashboard },
-              { id: 'transactions', label: 'تسجيل المعاملات', icon: List }, // Renamed here
+              { id: 'transactions', label: 'تسجيل المعاملات', icon: List },
               { id: 'savings', label: 'الادخار', icon: TrendingUp }, 
               { id: 'recurring', label: 'التزامات', icon: CalendarClock },
               { id: 'installments', label: 'الأقساط', icon: Layers }, 
@@ -463,7 +455,13 @@ function App() {
               { id: 'advisor', label: 'المحلل الذكي', icon: MessageSquareText },
               { id: 'goals', label: 'الأهداف', icon: Target },
               { id: 'profile', label: 'الملف الشخصي', icon: UserIcon }, 
-            ].map((item) => (
+            ].filter(item => !hiddenTabs.includes(item.id))
+             .sort((a,b) => {
+                 const orderA = tabOrder?.indexOf(a.id) ?? -1;
+                 const orderB = tabOrder?.indexOf(b.id) ?? -1;
+                 return (orderA === -1 ? 999 : orderA) - (orderB === -1 ? 999 : orderB);
+             })
+             .map((item) => (
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id as any)}
@@ -472,13 +470,13 @@ function App() {
                     ? 'bg-green-50 text-green-700 font-bold shadow-sm' 
                     : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
                 } ${isSidebarCollapsed ? 'justify-center px-2' : ''}`}
-                title={isSidebarCollapsed ? item.label : ''}
+                title={isSidebarCollapsed ? (customTabNames?.[item.id] || item.label) : ''}
               >
                 <item.icon className={`w-5 h-5 shrink-0 ${activeTab === item.id && isSidebarCollapsed ? 'text-green-600' : ''}`} />
-                {!isSidebarCollapsed && <span>{item.label}</span>}
+                {!isSidebarCollapsed && <span>{customTabNames?.[item.id] || item.label}</span>}
                 {isSidebarCollapsed && (
                     <div className="absolute right-full mr-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 pointer-events-none">
-                        {item.label}
+                        {customTabNames?.[item.id] || item.label}
                     </div>
                 )}
               </button>
@@ -727,13 +725,19 @@ function App() {
            {[
               { id: 'dashboard', label: 'الرئيسية', icon: LayoutDashboard },
               { id: 'transactions', label: 'سجل', icon: List },
-              { id: 'advisor', label: 'مساعد ذكي', icon: MessageSquareText }, // Added to mobile
+              { id: 'advisor', label: 'مساعد ذكي', icon: MessageSquareText }, 
               { id: 'recurring', label: 'التزامات', icon: CalendarClock },
-              { id: 'installments', label: 'أقساط', icon: Layers }, // Added to mobile
-              { id: 'goals', label: 'أهداف', icon: Target }, // Added to mobile
+              { id: 'installments', label: 'أقساط', icon: Layers }, 
+              { id: 'goals', label: 'أهداف', icon: Target }, 
               { id: 'savings', label: 'ادخار', icon: TrendingUp }, 
               { id: 'reports', label: 'تقارير', icon: FileBarChart },
-            ].map((item) => (
+            ].filter(item => !hiddenTabs.includes(item.id))
+             .sort((a,b) => {
+                 const orderA = tabOrder?.indexOf(a.id) ?? -1;
+                 const orderB = tabOrder?.indexOf(b.id) ?? -1;
+                 return (orderA === -1 ? 999 : orderA) - (orderB === -1 ? 999 : orderB);
+             })
+             .map((item) => (
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id as any)}
@@ -744,7 +748,7 @@ function App() {
                 }`}
               >
                 <item.icon className={`w-6 h-6 ${activeTab === item.id ? 'fill-current' : ''}`} strokeWidth={activeTab === item.id ? 2.5 : 2} />
-                <span className="text-[10px] font-bold whitespace-nowrap">{item.label}</span>
+                <span className="text-[10px] font-bold whitespace-nowrap">{customTabNames?.[item.id] || item.label}</span>
               </button>
             ))}
         </div>
