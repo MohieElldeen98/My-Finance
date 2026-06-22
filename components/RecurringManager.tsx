@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { RecurringTransaction, Transaction } from '../types';
 import { CURRENCY, FREQUENCY_LABELS } from '../constants';
-import { CalendarClock, Plus, Trash2, Pencil, Save, X, Timer, Filter, CheckSquare, ChevronLeft, ChevronRight, Bookmark } from 'lucide-react';
+import { CalendarClock, Plus, Trash2, Pencil, Save, X, Timer, Filter, CheckSquare, ChevronLeft, ChevronRight, Bookmark, PiggyBank, Coins, ChevronDown, ChevronUp, TrendingUp, Wallet, ArrowUpRight, AlertCircle } from 'lucide-react';
 import { useCategoryInfo } from '../context/GlobalSettings';
 
 interface RecurringManagerProps {
@@ -12,6 +12,7 @@ interface RecurringManagerProps {
   onUpdate: (item: RecurringTransaction) => void;
   onDelete: (id: string) => void;
   onProcess: (item: RecurringTransaction) => void;
+  onAddTransaction?: (data: any, dateOnly: string) => void;
 }
 
 interface DisplayItem {
@@ -26,9 +27,10 @@ interface DisplayItem {
     status: 'pending' | 'paid' | 'overdue';
     isOneTime: boolean;
     canPay: boolean;
+    isSavingTargetOnly?: boolean;
 }
 
-const RecurringManager: React.FC<RecurringManagerProps> = ({ items, transactions, onAdd, onUpdate, onDelete, onProcess }) => {
+const RecurringManager: React.FC<RecurringManagerProps> = ({ items, transactions, onAdd, onUpdate, onDelete, onProcess, onAddTransaction }) => {
   const getCategoryInfo = useCategoryInfo();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -38,6 +40,12 @@ const RecurringManager: React.FC<RecurringManagerProps> = ({ items, transactions
   const [filterType, setFilterType] = useState<'all' | 'income' | 'expense'>('all');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'paid'>('active');
 
+  // Savings Pot state variables
+  const [savingActionItemId, setSavingActionItemId] = useState<string | null>(null);
+  const [depositAmount, setDepositAmount] = useState<string>('');
+  const [recordAsTransaction, setRecordAsTransaction] = useState(true);
+  const [savingAction, setSavingAction] = useState<'deposit' | 'withdraw'>('deposit');
+
   const [formData, setFormData] = useState<Partial<RecurringTransaction>>({
     title: '',
     amount: 0,
@@ -46,7 +54,8 @@ const RecurringManager: React.FC<RecurringManagerProps> = ({ items, transactions
     nextDueDate: new Date().toISOString().split('T')[0],
     category: 'other',
     isOneTime: false,
-    installmentsCount: 0 
+    installmentsCount: 0,
+    targetSavingAmount: 0
   });
 
   const handlePrevMonth = () => {
@@ -110,9 +119,12 @@ const RecurringManager: React.FC<RecurringManagerProps> = ({ items, transactions
         // Simple Projection logic for Subscriptions
         let occursInViewMonth = false;
         let projectedDueDate = new Date(item.nextDueDate); 
+        let isSavingTargetOnly = false;
+
+        const isActualDueMonth = nextDue.getMonth() === currentMonth && nextDue.getFullYear() === currentYear;
         
         // Exact match
-        if (nextDue.getMonth() === currentMonth && nextDue.getFullYear() === currentYear) {
+        if (isActualDueMonth) {
             occursInViewMonth = true;
             projectedDueDate = nextDue;
         } else if (item.active && viewDate > today) {
@@ -133,12 +145,25 @@ const RecurringManager: React.FC<RecurringManagerProps> = ({ items, transactions
             projectedDueDate = nextDue;
         }
 
+        // Monthly Target Saving logic:
+        // if it doesn't already occur in the view month according to normal schedule,
+        // but it has a monthly saving target and is active and view month <= due month:
+        const viewYearMonth = currentYear * 12 + currentMonth;
+        const nextDueYearMonth = nextDue.getFullYear() * 12 + nextDue.getMonth();
+        const isSavingTargetItem = item.active && item.type === 'expense' && item.targetSavingAmount && item.targetSavingAmount > 0;
+
+        if (!occursInViewMonth && isSavingTargetItem && viewYearMonth <= nextDueYearMonth) {
+            occursInViewMonth = true;
+            projectedDueDate = nextDue;
+            isSavingTargetOnly = true;
+        }
+
         if (occursInViewMonth) {
              const alreadyListed = displayList.find(d => d.originalRecurringId === item.id);
              
              if (!alreadyListed) {
                  let status: 'pending' | 'overdue' = 'pending';
-                 if (projectedDueDate < today && isCurrentMonthView) status = 'overdue';
+                 if (projectedDueDate < today && isCurrentMonthView && !isSavingTargetOnly) status = 'overdue';
 
                  if (item.active) {
                     displayList.push({
@@ -152,7 +177,8 @@ const RecurringManager: React.FC<RecurringManagerProps> = ({ items, transactions
                         date: projectedDueDate.toISOString(),
                         status: status,
                         isOneTime: !!item.isOneTime,
-                        canPay: isCurrentMonthView || status === 'overdue',
+                        canPay: (isCurrentMonthView || status === 'overdue') && !isSavingTargetOnly,
+                         isSavingTargetOnly: isSavingTargetOnly,
                     });
                  }
              }
@@ -176,11 +202,19 @@ const RecurringManager: React.FC<RecurringManagerProps> = ({ items, transactions
     let income = 0;
     let expense = 0;
     processedItems.forEach(item => {
-        if (item.type === 'income') income += item.amount;
-        else expense += item.amount;
+        if (item.type === 'income') {
+            income += item.amount;
+        } else {
+            if (item.isSavingTargetOnly) {
+                const original = items.find(i => i.id === item.originalRecurringId);
+                expense += original?.targetSavingAmount || 0;
+            } else {
+                expense += item.amount;
+            }
+        }
     });
     return { income, expense, net: income - expense };
-  }, [processedItems]);
+  }, [processedItems, items]);
 
 
   // Form Handlers
@@ -194,7 +228,8 @@ const RecurringManager: React.FC<RecurringManagerProps> = ({ items, transactions
       nextDueDate: new Date().toISOString().split('T')[0],
       category: 'other',
       isOneTime: false,
-      installmentsCount: 0
+      installmentsCount: 0,
+      targetSavingAmount: 0
     });
     setShowForm(!showForm);
   };
@@ -211,7 +246,8 @@ const RecurringManager: React.FC<RecurringManagerProps> = ({ items, transactions
       nextDueDate: item.nextDueDate,
       category: item.category,
       isOneTime: item.isOneTime,
-      installmentsCount: 0
+      installmentsCount: 0,
+      targetSavingAmount: item.targetSavingAmount || 0
     });
     setShowForm(true);
   };
@@ -219,6 +255,8 @@ const RecurringManager: React.FC<RecurringManagerProps> = ({ items, transactions
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.title || !formData.amount) return;
+
+    const existingItem = editingId ? items.find(i => i.id === editingId) : null;
 
     const transactionData = {
       title: formData.title,
@@ -230,7 +268,9 @@ const RecurringManager: React.FC<RecurringManagerProps> = ({ items, transactions
       active: true,
       isOneTime: formData.isOneTime || false,
       installmentsCount: 0,
-      startDate: formData.nextDueDate 
+      startDate: formData.nextDueDate,
+      targetSavingAmount: Number(formData.targetSavingAmount) || 0,
+      savedAmount: existingItem ? (existingItem.savedAmount || 0) : 0
     };
 
     if (editingId) {
@@ -239,9 +279,57 @@ const RecurringManager: React.FC<RecurringManagerProps> = ({ items, transactions
       onAdd({ ...transactionData, id: Date.now().toString() } as RecurringTransaction);
     }
 
-    setFormData({ title: '', amount: 0, type: 'expense', frequency: 'monthly', nextDueDate: new Date().toISOString().split('T')[0], category: 'other', isOneTime: false, installmentsCount: 0 });
+    setFormData({ title: '', amount: 0, type: 'expense', frequency: 'monthly', nextDueDate: new Date().toISOString().split('T')[0], category: 'other', isOneTime: false, installmentsCount: 0, targetSavingAmount: 0 });
     setEditingId(null);
     setShowForm(false);
+  };
+
+  const handleCommitmentSavingAction = (item: RecurringTransaction, event: React.FormEvent) => {
+    event.preventDefault();
+    const amountVal = parseFloat(depositAmount);
+    if (isNaN(amountVal) || amountVal <= 0) return;
+
+    let currentSaved = item.savedAmount || 0;
+    let newSaved = currentSaved;
+
+    if (savingAction === 'deposit') {
+      newSaved = currentSaved + amountVal;
+    } else {
+      newSaved = Math.max(0, currentSaved - amountVal);
+    }
+
+    // Update original document in Firestore
+    onUpdate({
+      ...item,
+      savedAmount: newSaved
+    });
+
+    // Optionally record as a transaction to decrease/increase the active wallet cash
+    if (recordAsTransaction && onAddTransaction) {
+      if (savingAction === 'deposit') {
+        onAddTransaction({
+          amount: amountVal,
+          currency: 'ج.م',
+          type: 'expense',
+          category: 'other',
+          note: `تحويش جانبي لالتزام: ${item.title}`,
+          paymentMethod: 'cash'
+        }, new Date().toISOString().split('T')[0]);
+      } else {
+        onAddTransaction({
+          amount: amountVal,
+          currency: 'ج.م',
+          type: 'income',
+          category: 'other',
+          note: `استرداد من حصالة التزام: ${item.title}`,
+          paymentMethod: 'cash'
+        }, new Date().toISOString().split('T')[0]);
+      }
+    }
+
+    // Clean states
+    setDepositAmount('');
+    setSavingActionItemId(null);
   };
 
   const getRemainingTime = (dateStr: string) => {
@@ -348,6 +436,19 @@ const RecurringManager: React.FC<RecurringManagerProps> = ({ items, transactions
              <input type="date" className="w-full p-3 bg-white rounded-xl border border-gray-200" value={formData.nextDueDate} onChange={e => setFormData({...formData, nextDueDate: e.target.value})} required />
           </div>
 
+          {formData.type === 'expense' && (
+            <div className="space-y-1">
+               <label className="text-xs text-gray-400 mr-2">التحويش الشهري المستهدف (اختياري)</label>
+               <input 
+                 type="number" 
+                 placeholder="مثال: 10000" 
+                 className="w-full p-3 bg-white rounded-xl border border-gray-200" 
+                 value={formData.targetSavingAmount || ''} 
+                 onChange={e => setFormData({...formData, targetSavingAmount: parseFloat(e.target.value) || 0})} 
+               />
+            </div>
+          )}
+
           <div className="col-span-1 md:col-span-2 flex items-center gap-2 bg-gray-50 p-3 rounded-xl border border-gray-200">
              <input type="checkbox" id="isOneTime" checked={formData.isOneTime} onChange={e => setFormData({...formData, isOneTime: e.target.checked})} className="w-5 h-5 accent-purple-600" />
              <label htmlFor="isOneTime" className="text-sm font-bold text-gray-700 cursor-pointer select-none">التزام لمرة واحدة فقط (لهذا الشهر)</label>
@@ -367,58 +468,224 @@ const RecurringManager: React.FC<RecurringManagerProps> = ({ items, transactions
             const remainingTime = getRemainingTime(item.date);
 
             return (
-                <div key={`${item.id}-${item.date}`} className={`p-4 rounded-2xl shadow-sm border ${isPaid ? "bg-green-50/50 border-green-200 opacity-80" : isOverdue ? "bg-red-50 border-red-200" : "bg-white border-gray-100"} flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-colors duration-300 relative overflow-hidden`}>
+                <div key={`${item.id}-${item.date}`} className={`p-4 rounded-2xl shadow-sm border ${isPaid ? "bg-green-50/50 border-green-200 opacity-80" : isOverdue ? "bg-red-50 border-red-200" : "bg-white border-gray-100"} flex flex-col gap-4 transition-colors duration-300 relative overflow-hidden`}>
                     
                     {isPaid && <div className="absolute top-0 left-0 bg-green-500 text-white text-xs px-2 py-1 rounded-br-lg font-bold z-10">تم التسديد</div>}
                     {item.isOneTime && <div className="absolute top-0 right-0 bg-purple-100 text-purple-700 text-[10px] px-2 py-1 rounded-bl-lg font-bold flex items-center gap-1 z-10"><Bookmark size={10} /> مرة واحدة</div>}
+                    {item.isSavingTargetOnly && <div className="absolute top-0 right-0 bg-indigo-100 text-indigo-700 text-[10px] px-2 py-1 rounded-bl-lg font-bold flex items-center gap-1 z-10"><PiggyBank size={10} /> هدف ادخاري نشط</div>}
                     
-                    <div className="flex items-start gap-4 flex-1 w-full md:w-auto mt-4 md:mt-0">
-                        <div className={`p-3 rounded-full flex-shrink-0 ${item.type === 'income' ? 'bg-green-100 text-green-600' : (isPaid ? 'bg-gray-100 text-gray-400' : 'bg-red-100 text-red-600')}`}>
-                            <CalendarClock size={24} />
-                        </div>
-                        <div className="flex-1">
-                            <h3 className={`font-bold text-lg leading-tight ${isPaid ? 'text-gray-500 line-through' : 'text-gray-800'}`}>{item.title}</h3>
-                            <div className="flex gap-2 text-sm text-gray-500 mt-1 flex-wrap">
-                                <span className="bg-white border border-gray-100 px-2 py-0.5 rounded text-xs">{getCategoryInfo(item.category).label}</span>
-                                <span className="bg-white border border-gray-100 px-2 py-0.5 rounded text-xs">{FREQUENCY_LABELS[item.frequency] || 'شهري'}</span>
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 w-full">
+                        <div className="flex items-start gap-4 flex-1 w-full md:w-auto mt-4 md:mt-0">
+                            <div className={`p-3 rounded-full flex-shrink-0 ${item.type === 'income' ? 'bg-green-100 text-green-600' : (isPaid ? 'bg-gray-100 text-gray-400' : 'bg-red-100 text-red-600')}`}>
+                                <CalendarClock size={24} />
                             </div>
-                            
-                            {!isPaid && (
-                                <div className="text-xs mt-2 flex items-center gap-2">
-                                   <span className={`${isOverdue ? 'text-red-600 font-bold' : 'text-gray-500'}`}>
-                                      {new Date(item.date).toLocaleDateString('ar-EG')}
-                                   </span>
-                                   {!isOverdue ? (
-                                     <span className="text-blue-500 bg-blue-50 px-2 py-0.5 rounded flex items-center gap-1"><Timer size={10} /> {remainingTime}</span>
-                                   ) : <span className="text-red-600 font-bold bg-red-100 px-2 py-0.5 rounded">متأخر!</span>}
+                            <div className="flex-1">
+                                <h3 className={`font-bold text-lg leading-tight ${isPaid ? 'text-gray-500 line-through' : 'text-gray-800'}`}>{item.title}</h3>
+                                <div className="flex gap-2 text-sm text-gray-500 mt-1 flex-wrap">
+                                    <span className="bg-white border border-gray-100 px-2 py-0.5 rounded text-xs">{getCategoryInfo(item.category).label}</span>
+                                    <span className="bg-white border border-gray-100 px-2 py-0.5 rounded text-xs">{FREQUENCY_LABELS[item.frequency] || 'شهري'}</span>
                                 </div>
-                            )}
+                                
+                                {!isPaid && (
+                                    <div className="text-xs mt-2 flex flex-col md:flex-row md:items-center gap-2">
+                                       <div className="flex items-center gap-1">
+                                           <span className="text-gray-400">تاريخ الاستحقاق الكامل:</span>
+                                           <span className={`${isOverdue ? 'text-red-600 font-bold' : 'text-indigo-600 font-bold'}`}>
+                                              {new Date(item.date).toLocaleDateString('ar-EG')}
+                                           </span>
+                                       </div>
+                                       {item.isSavingTargetOnly ? (
+                                           <span className="text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded flex items-center gap-1 font-bold">
+                                               <PiggyBank size={10} /> تحويش لشهر {viewDate.toLocaleDateString('ar-EG', { month: 'long' })}
+                                           </span>
+                                       ) : (
+                                           !isOverdue ? (
+                                             <span className="text-blue-500 bg-blue-50 px-2 py-0.5 rounded flex items-center gap-1"><Timer size={10} /> {remainingTime}</span>
+                                           ) : <span className="text-red-600 font-bold bg-red-100 px-2 py-0.5 rounded">متأخر!</span>
+                                       )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="flex flex-row md:flex-col items-center md:items-end gap-3 w-full md:w-auto justify-between md:justify-center border-t border-gray-100 md:border-none pt-3 md:pt-0">
+                            <div className="flex flex-col items-start md:items-end w-full md:w-auto">
+                                {item.isSavingTargetOnly ? (
+                                    <>
+                                        {(() => {
+                                            const original = items.find(i => i.id === item.originalRecurringId);
+                                            const targetAmt = original?.targetSavingAmount || 0;
+                                            return (
+                                                <div className="flex flex-col items-start md:items-end">
+                                                    <span className="text-[10px] text-indigo-500 font-black">مستهدف توفيره هذا الشهر:</span>
+                                                    <span className="text-lg md:text-xl font-black text-indigo-700">
+                                                        {targetAmt.toLocaleString()} {CURRENCY}
+                                                    </span>
+                                                    <span className="text-[10px] text-gray-400">
+                                                        من قيمة الالتزام: {item.amount.toLocaleString()} {CURRENCY}
+                                                    </span>
+                                                </div>
+                                            );
+                                        })()}
+                                    </>
+                                ) : (
+                                    <span className={`text-xl font-bold ${isPaid ? 'text-gray-400' : (item.type === 'income' ? 'text-green-600' : 'text-red-600')}`}>
+                                        {item.amount.toLocaleString()} {CURRENCY}
+                                    </span>
+                                )}
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                 {item.canPay && (
+                                    <button 
+                                        onClick={() => onProcess(items.find(i => i.id === item.originalRecurringId) as RecurringTransaction)}
+                                        className={`px-4 py-2 text-sm font-bold rounded-xl flex items-center gap-2 transition-all ${isOverdue ? 'bg-red-600 text-white hover:bg-red-700 animate-pulse' : 'bg-green-600 text-white hover:bg-green-700'}`}
+                                    >
+                                        <CheckSquare size={16} /> {item.type === 'income' ? 'استلام' : 'تسديد'}
+                                    </button>
+                                 )}
+                                 
+                                 {!isPaid && (
+                                     <div className="flex bg-gray-50 rounded-lg border border-gray-100">
+                                        <button onClick={() => handleStartEdit(item.originalRecurringId)} className="p-2 text-gray-400 hover:text-blue-500 transition-colors border-l border-gray-200"><Pencil size={18} /></button>
+                                        <button onClick={() => onDelete(item.originalRecurringId)} className="p-2 text-gray-400 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
+                                    </div>
+                                 )}
+                            </div>
                         </div>
                     </div>
 
-                    <div className="flex flex-row md:flex-col items-center md:items-end gap-3 w-full md:w-auto justify-between md:justify-center border-t border-gray-100 md:border-none pt-3 md:pt-0">
-                        <span className={`text-xl font-bold ${isPaid ? 'text-gray-400' : (item.type === 'income' ? 'text-green-600' : 'text-red-600')}`}>
-                            {item.amount.toLocaleString()} {CURRENCY}
-                        </span>
+                    {/* حصالة الالتزام المخصصة (جديد) */}
+                    {item.type === 'expense' && !isPaid && (
+                        (() => {
+                            const original = items.find(i => i.id === item.originalRecurringId);
+                            if (!original || !(original.targetSavingAmount > 0)) return null;
 
-                        <div className="flex items-center gap-2">
-                             {item.canPay && (
-                                <button 
-                                    onClick={() => onProcess(items.find(i => i.id === item.originalRecurringId) as RecurringTransaction)}
-                                    className={`px-4 py-2 text-sm font-bold rounded-xl flex items-center gap-2 transition-all ${isOverdue ? 'bg-red-600 text-white hover:bg-red-700 animate-pulse' : 'bg-green-600 text-white hover:bg-green-700'}`}
-                                >
-                                    <CheckSquare size={16} /> {item.type === 'income' ? 'استلام' : 'تسديد'}
-                                </button>
-                             )}
-                             
-                             {!isPaid && (
-                                 <div className="flex bg-gray-50 rounded-lg border border-gray-100">
-                                    <button onClick={() => handleStartEdit(item.originalRecurringId)} className="p-2 text-gray-400 hover:text-blue-500 transition-colors border-l border-gray-200"><Pencil size={18} /></button>
-                                    <button onClick={() => onDelete(item.originalRecurringId)} className="p-2 text-gray-400 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
+                            const savedAmt = original.savedAmount || 0;
+                            const targetAmt = original.targetSavingAmount || 0;
+                            const pct = Math.min(100, Math.round((savedAmt / original.amount) * 100));
+
+                            return (
+                                <div className="border-t border-gray-100 pt-3 mt-1 flex flex-col gap-3">
+                                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-indigo-50/50 p-3 rounded-2xl border border-indigo-100">
+                                        {/* تفاصيل الادخار والعملات */}
+                                        <div className="flex items-start gap-2.5">
+                                            <div className="p-2 bg-indigo-100 text-indigo-700 rounded-xl mt-0.5">
+                                                <PiggyBank size={20} />
+                                            </div>
+                                            <div>
+                                                <h4 className="text-xs font-bold text-indigo-900 mb-0.5">حصّالة التوفير المخصصة لهذا الالتزام</h4>
+                                                <div className="flex flex-wrap items-center gap-2 text-[11px] text-indigo-700">
+                                                    <span>المبلغ المتوفر كاش جانباً: <strong className="text-sm text-indigo-950 font-black">{savedAmt.toLocaleString()} {CURRENCY}</strong></span>
+                                                    {targetAmt > 0 && (
+                                                        <span className="bg-white border border-indigo-100 px-1.5 py-0.5 rounded text-indigo-800 font-bold">
+                                                            التوفير الشهري المستهدف: {targetAmt.toLocaleString()} {CURRENCY}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                {/* رسالة إرشادية للمستخدم */}
+                                                {original.frequency === 'quarterly' && (
+                                                    <p className="text-[10px] text-gray-400 mt-1 leading-normal">فكرة ذكية💡: هذا الالتزام ربع سنوي (كل 3 شهور)، تحويش مبالغ دورية جانباً يمنع الضغط المفاجئ على ميزانيتك عند موعد الاستحقاق.</p>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* زر تفعيل الحركة */}
+                                        <button 
+                                            type="button"
+                                            onClick={() => {
+                                                if (savingActionItemId === original.id) {
+                                                    setSavingActionItemId(null);
+                                                } else {
+                                                    setSavingActionItemId(original.id);
+                                                    setDepositAmount('');
+                                                    setSavingAction('deposit');
+                                                }
+                                            }}
+                                            className="w-full md:w-auto flex items-center justify-center gap-1.5 text-xs text-indigo-700 bg-white hover:bg-indigo-50 border border-indigo-200 font-bold px-3 py-2 rounded-xl transition-all shadow-sm"
+                                        >
+                                            <Coins size={14} />
+                                            {savingActionItemId === original.id ? 'إغلاق الحصالة' : 'توفير مبالغ إضافية'}
+                                        </button>
+                                    </div>
+
+                                    {/* شريط التقدم لحالة الالتزام */}
+                                    <div className="space-y-1">
+                                        <div className="flex justify-between items-center text-[11px] text-gray-500">
+                                            <span>نسبة تغطية الالتزام من المدخرات</span>
+                                            <span className="font-bold text-gray-700">{pct}% ({savedAmt.toLocaleString()} / {original.amount.toLocaleString()} ج.م)</span>
+                                        </div>
+                                        <div className="h-2 bg-gray-100 rounded-full w-full overflow-hidden">
+                                            <div style={{ width: `${pct}%` }} className="h-full bg-gradient-to-l from-indigo-500 to-purple-600 transition-all duration-500 rounded-full"></div>
+                                        </div>
+                                        {pct >= 100 && (
+                                            <p className="text-[10px] text-green-600 font-bold flex items-center gap-1">🎉 رائع! لقد استطعت تغطية قيمة هذا الالتزام بالكامل مسبقاً.</p>
+                                        )}
+                                    </div>
+
+                                    {/* نموذج حركة توفير في الحصالة */}
+                                    {savingActionItemId === original.id && (
+                                        <div className="bg-slate-50 p-4 rounded-xl border border-gray-200 space-y-3 animate-fade-in w-full text-right">
+                                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200/50 pb-2">
+                                                <span className="text-xs font-bold text-gray-700">إجراء معاملة على الحصالة الخاصة بـ "{original.title}"</span>
+                                                <div className="flex bg-white p-0.5 rounded-lg border border-gray-200">
+                                                    <button 
+                                                        type="button" 
+                                                        onClick={() => setSavingAction('deposit')}
+                                                        className={`px-3 py-1 text-[11px] font-bold rounded-md transition-all ${savingAction === 'deposit' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
+                                                    >
+                                                        إيداع (تحويش)
+                                                    </button>
+                                                    <button 
+                                                        type="button" 
+                                                        onClick={() => setSavingAction('withdraw')}
+                                                        className={`px-3 py-1 text-[11px] font-bold rounded-md transition-all ${savingAction === 'withdraw' ? 'bg-orange-600 text-white shadow-sm' : 'text-gray-500 hover:bg-gray-100'}`}
+                                                    >
+                                                        سحب (استرداد)
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex gap-2">
+                                                <input 
+                                                    type="number" 
+                                                    value={depositAmount} 
+                                                    onChange={(e) => setDepositAmount(e.target.value)}
+                                                    placeholder={savingAction === 'deposit' ? "أدخل قيمة التوفير (مثال: 10000)" : "أدخل المبلغ المسترد للحساب الرئيسي"}
+                                                    className="flex-1 p-2.5 bg-white border border-gray-200 rounded-xl text-sm required outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 text-right font-bold"
+                                                    required
+                                                />
+                                                <button 
+                                                    type="button"
+                                                    onClick={(e) => handleCommitmentSavingAction(original, e)}
+                                                    className={`px-5 py-2.5 text-xs font-bold text-white rounded-xl transition-colors shadow-sm ${savingAction === 'deposit' ? 'bg-indigo-600 hover:bg-indigo-700 hover:shadow-indigo-100' : 'bg-orange-600 hover:bg-orange-700 hover:shadow-orange-100'}`}
+                                                >
+                                                    تأكيد العملية
+                                                </button>
+                                            </div>
+
+                                            {onAddTransaction && (
+                                                <div className="flex items-center gap-2 select-none pt-1">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        id={`record-${original.id}`} 
+                                                        checked={recordAsTransaction} 
+                                                        onChange={e => setRecordAsTransaction(e.target.checked)} 
+                                                        className="w-4 h-4 accent-indigo-600 cursor-pointer"
+                                                    />
+                                                    <label htmlFor={`record-${original.id}`} className="text-[11px] text-gray-500 font-bold cursor-pointer">
+                                                        {savingAction === 'deposit' 
+                                                            ? "خصم المبلغ وتسجيل معاملة مصروف (ادخار) في الحساب الرئيسي للحفاظ على توازن الميزانية" 
+                                                            : "إضافة المبلغ وتسجيل دخل مسترد في الحساب الرئيسي لتحديث ميزانيتك النشطة"}
+                                                    </label>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
-                             )}
-                        </div>
-                    </div>
+                            );
+                        })()
+                    )}
                 </div>
             );
         })}

@@ -66,6 +66,8 @@ export interface RecurringTransaction {
   isOneTime?: boolean;
   installmentsCount?: number; // عدد الأقساط الكلي (يتم حسابه تلقائياً الآن)
   totalPaidCount?: number; // كم قسط اندفع لحد دلوقتي
+  savedAmount?: number; // 👈 كمية المبالغ المحفوظة جانباً لهذا الالتزام
+  targetSavingAmount?: number; // 👈 التحويش الشهري المستهدف المخصص لهذ الالتزام
 }
 
 export interface FinancialGoal {

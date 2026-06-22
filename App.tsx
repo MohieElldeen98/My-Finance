@@ -329,7 +329,7 @@ function App() {
     const itemRef = doc(db, 'recurring', item.id);
 
     if (item.isOneTime) {
-        await updateDoc(itemRef, { active: false });
+        await updateDoc(itemRef, { active: false, savedAmount: 0 });
     } else {
         const currentDueDate = new Date(item.nextDueDate);
         let nextDate = new Date(currentDueDate);
@@ -351,7 +351,8 @@ function App() {
         await updateDoc(itemRef, { 
             nextDueDate: nextDate.toISOString(),
             totalPaidCount: newTotalPaid,
-            active: isActive
+            active: isActive,
+            savedAmount: 0 // تم تسديد الالتزام، تصفير الحصالة للمرة القادمة تلقائياً
         });
     }
   };
@@ -676,6 +677,7 @@ function App() {
                   onUpdate={handleUpdateRecurring}
                   onDelete={handleDeleteRecurring}
                   onProcess={handleProcessRecurring}
+                  onAddTransaction={handleManualTransaction}
                 />
              )}
 
